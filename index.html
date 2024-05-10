@@ -3,29 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <!-- <title>Document</title> -->
   </head>
   <body>
-    <form>
-      <div>
-        <label>Select a video</label>
-        <input type="file" accept="video/*" />
-      </div>
-      <button type="submit">Get Info</button>
-    </form>
-    <h1 id="result"></h1>
+    <h1>My Todos</h1>
+    <ul></ul>
     <script>
-      document.querySelector("form").addEventListener("submit", (event) => {
-        event.preventDefault()
-        const { path } = document.querySelector("input").files[0]
+      const list = document.querySelector("ul")
 
-        window.electron.submitVideo(path)
+      window.api.on("todo:add", (todo) => {
+        const li = document.createElement("li")
+        const text = document.createTextNode(todo)
+        li.appendChild(text)
+        list.appendChild(li)
       })
 
-      window.electron.receiveVideoMetadata((duration) => {
-        document.querySelector(
-          "#result"
-        ).innerHTML = `Video is ${duration} seconds`
+      window.api.on("todo:clear", () => {
+        list.innerHTML = ""
       })
     </script>
   </body>
