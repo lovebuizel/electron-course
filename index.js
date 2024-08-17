@@ -1,83 +1,31 @@
-const { app, BrowserWindow, Menu, ipcMain } = require("electron")
+const electron = require("electron")
 const path = require("path")
+const TimerTray = require("./app/timer_tray")
+const MainWindow = require("./app/main_window")
+
+const { app, ipcMain } = electron
 
 let mainWindow
-let addWindow
+let tray
 
 app.on("ready", () => {
-  console.log("ready")
-  mainWindow = new BrowserWindow({
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, "preload.js"),
-    },
-  })
-  mainWindow.loadURL(`file://${__dirname}/index.html`)
-  // 防止子視窗還存活
-  mainWindow.on("closed", () => app.quit())
+  mainWindow = new MainWindow(`file://${__dirname}/src/index.html`)
+  if (process.platform === "darwin") {
+    app.dock.hide()
+  } else {
+    mainWindow.setSkipTaskbar(true)
+  }
 
-  const mainMenu = Menu.buildFromTemplate(menuTemplate)
-  Menu.setApplicationMenu(mainMenu)
+  const iconName =
+    process.platform === "win32" ? "windows-icon.png" : "iconTemplate.png"
+
+  const iconPath = path.join(__dirname, `./src/assets/${iconName}`)
+
+  // 避免被Garbage Collection
+  tray = new TimerTray(iconPath, mainWindow)
 })
 
-function createAddWindow() {
-  addWindow = new BrowserWindow({
-    width: 300,
-    height: 200,
-    title: "Add New Todo",
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, "preload.js"),
-    },
-  })
-  addWindow.loadURL(`file://${__dirname}/add.html`)
-  addWindow.on("closed", () => (addWindow = null))
-}
-
-ipcMain.on("todo:add", (event, todo) => {
-  mainWindow.webContents.send("todo:add", todo)
-  addWindow.close()
+ipcMain.on("update-timer", (event, timeLeft) => {
+  // 只有mac os有用
+  tray.setTitle(timeLeft)
 })
-
-const menuTemplate = [
-  {
-    label: "File",
-    submenu: [
-      { label: "New Todo", click: createAddWindow },
-      {
-        label: "Clear Todos",
-        click: () => {
-          mainWindow.webContents.send("todo:clear")
-        },
-      },
-      {
-        label: "Quit",
-        accelerator: process.platform === "darwin" ? "Command+Q" : "Ctrl+Q",
-        click: () => app.quit(),
-      },
-    ],
-  },
-]
-
-if (process.platform === "darwin") {
-  menuTemplate.unshift({ label: "" })
-}
-
-if (process.env.NODE_ENV !== "production") {
-  menuTemplate.push({
-    label: "View",
-    submenu: [
-      { role: "reload" },
-      {
-        label: "Toggle Developer Tools",
-        accelerator:
-          process.platform === "darwin" ? "Command+Alt+I" : "Ctrl+Shift+I",
-        click: (item, focusedWindow) => {
-          focusedWindow.toggleDevTools()
-        },
-      },
-    ],
-  })
-}
