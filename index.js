@@ -1,31 +1,53 @@
-const electron = require("electron")
-const path = require("path")
-const TimerTray = require("./app/timer_tray")
-const MainWindow = require("./app/main_window")
+const electron = require("electron");
+const ffmpeg = require("fluent-ffmpeg");
+const _ = require("lodash");
 
-const { app, ipcMain } = electron
+const { app, BrowserWindow, ipcMain, shell } = electron;
 
-let mainWindow
-let tray
+let mainWindow;
 
 app.on("ready", () => {
-  mainWindow = new MainWindow(`file://${__dirname}/src/index.html`)
-  if (process.platform === "darwin") {
-    app.dock.hide()
-  } else {
-    mainWindow.setSkipTaskbar(true)
-  }
+  mainWindow = new BrowserWindow({
+    height: 600,
+    width: 800,
+    webPreferences: { backgroundThrottling: false },
+  });
+  mainWindow.loadURL(`file://${__dirname}/src/index.html`);
+});
 
-  const iconName =
-    process.platform === "win32" ? "windows-icon.png" : "iconTemplate.png"
+ipcMain.on("videos:added", (event, videos) => {
+  const promises = _.map(videos, (video) => {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(video.path, (err, metadata) => {
+        video.duration = metadata.format.duration;
+        video.format = "avi";
+        resolve(video);
+      });
+    });
+  });
+  Promise.all(promises).then((results) => {
+    mainWindow.webContents.send("metadata:complete", results);
+  });
+});
 
-  const iconPath = path.join(__dirname, `./src/assets/${iconName}`)
+ipcMain.on("conversion:start", (event, videos) => {
+  _.each(videos, (video) => {
+    const outputDirectory = video.path.split(video.name)[0];
+    const outputName = video.name.split(".")[0];
+    const outputPath = `${outputDirectory}${outputName}.${video.format}`;
 
-  // 避免被Garbage Collection
-  tray = new TimerTray(iconPath, mainWindow)
-})
+    ffmpeg(video.path)
+      .output(outputPath)
+      .on("progress", ({ timemark }) =>
+        mainWindow.webContents.send("conversion:progress", { video, timemark })
+      )
+      .on("end", () =>
+        mainWindow.webContents.send("conversion:end", { video, outputPath })
+      )
+      .run();
+  });
+});
 
-ipcMain.on("update-timer", (event, timeLeft) => {
-  // 只有mac os有用
-  tray.setTitle(timeLeft)
-})
+ipcMain.on("folder:open", (event, outputPath) => {
+  shell.showItemInFolder(outputPath);
+});
